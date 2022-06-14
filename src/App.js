@@ -1,3 +1,4 @@
+import { logDOM } from "@testing-library/react";
 import { useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import "./App.css";
@@ -17,30 +18,47 @@ const buttons = [
     label: "Done",
   },
 ];
+let localStorageItems = []
+  for ( var i = 0, len = localStorage.length; i < len; ++i ) {
+    let keyOfLocalStorage = localStorage.key(i);
+    let jsonObject = JSON.parse(localStorage.getItem(keyOfLocalStorage)) 
+    localStorageItems = [...localStorageItems, jsonObject]
+  }
 
-const toDoItems = [
-  {
-    key: uuidv4(),
-    label: "Have fun",
-  },
-  {
-    key: uuidv4(),
-    label: "Spread Empathy",
-  },
-  {
-    key: uuidv4(),
-    label: "Generate Value",
-  },
-];
+const toDoItems = [...localStorageItems].sort((a,b) => {
+  return a.addedTime - b.addedTime
+});
+
 
 // helpful links:
 // useState crash => https://blog.logrocket.com/a-guide-to-usestate-in-react-ecb9952e406c/
 function App() {
   const [itemToAdd, setItemToAdd] = useState("");
+  const [itemToDelete, setItemToDelete] = useState("");
   //arrow declaration => expensive computation ex: API calls
   const [items, setItems] = useState(() => toDoItems);
 
   const [filterType, setFilterType] = useState("");
+
+  const [itemToSearch, setItemToSearch] = useState("")
+  
+  const filteredItems = 
+    !filterType && !itemToSearch || filterType === "all" && !itemToSearch
+      ? items
+      : !filterType || filterType === "all" && itemToSearch
+      ? items.filter((item) => item.label.includes(itemToSearch))
+      : filterType === "active" && !itemToSearch
+      ? items.filter((item) => !item.done)
+      : filterType === "active" && itemToSearch
+      ? items.filter((item) => !item.done && item.label.includes(itemToSearch))
+      : filterType === "done" && !itemToSearch
+      ? items.filter((item) => item.done)
+      : items.filter((item) => item.done && item.label.includes(itemToSearch));
+
+  console.log(filteredItems);
+  const handleSearchItem = (event) => {
+    setItemToSearch(event.target.value)
+  }
 
   const handleChangeItem = (event) => {
     setItemToAdd(event.target.value);
@@ -53,13 +71,25 @@ function App() {
     // setItems(oldItems);
 
     // not mutating !CORRECT!
+    const key = uuidv4()
+    const itemToStore = {label: itemToAdd, key: key, addedTime: Date.now()}
     setItems((prevItems) => [
-      { label: itemToAdd, key: uuidv4() },
+      itemToStore,
       ...prevItems,
     ]);
+    localStorage.setItem(key, JSON.stringify(itemToStore))
 
     setItemToAdd("");
   };
+
+  const handleDelete = ({ key }) => {
+    setItemToDelete(key)
+    const itemIndex = items.findIndex((item) => item.key === key);
+    const leftSideOfAnArray = items.slice(0, itemIndex)
+    const rightSideOfAnArray = items.slice(itemIndex + 1, items.length)
+    setItems([...leftSideOfAnArray, ...rightSideOfAnArray])
+    localStorage.removeItem(key)
+  }
 
   const handleItemDone = ({ key }) => {
     //first way
@@ -81,6 +111,8 @@ function App() {
     setItems((prevItems) =>
       prevItems.map((item) => {
         if (item.key === key) {
+          localStorage.removeItem(key)
+          localStorage.setItem(key, JSON.stringify({...item, done: !item.done})) 
           return { ...item, done: !item.done };
         } else return item;
       })
@@ -91,16 +123,22 @@ function App() {
     setFilterType(type);
   };
 
+  const handleImportant = ({key}) => {
+    
+    setItems((prevItems) => 
+      prevItems.map((item) => {
+        if (item.key === key) {
+          localStorage.removeItem(key)
+          localStorage.setItem(key, JSON.stringify({...item, importance: !item.importance})) 
+          return {...item, importance: !item.importance};
+        } else return item;
+      })
+    )
+  }
+
   const amountDone = items.filter((item) => item.done).length;
 
   const amountLeft = items.length - amountDone;
-
-  const filteredItems =
-    !filterType || filterType === "all"
-      ? items
-      : filterType === "active"
-      ? items.filter((item) => !item.done)
-      : items.filter((item) => item.done);
 
   return (
     <div className="todo-app">
@@ -115,9 +153,11 @@ function App() {
       <div className="top-panel d-flex">
         {/* Search-panel */}
         <input
+          value={itemToSearch}
           type="text"
           className="form-control search-input"
           placeholder="type to search"
+          onChange={handleSearchItem}
         />
         {/* Item-status-filter */}
         <div className="btn-group">
@@ -139,24 +179,24 @@ function App() {
       {/* List-group */}
       <ul className="list-group todo-list">
         {filteredItems.length > 0 &&
-          filteredItems.map((item) => (
-            <li key={item.key} className="list-group-item">
-              <span className={`todo-list-item${item.done ? " done" : ""}`}>
+          filteredItems.map((item, index) => (
+            <li key={index} className="list-group-item">
+              <span className={`todo-list-item${item.done ? " done" : ""}${item.importance ? " important": ""}`}>
                 <span
                   className="todo-list-item-label"
-                  onClick={() => handleItemDone(item)}
+                  onClick={() => handleItemDone (item)}
                 >
                   {item.label}
                 </span>
 
-                <button
+                <button onClick={() => handleImportant (item)}
                   type="button"
                   className="btn btn-outline-success btn-sm float-right"
                 >
                   <i className="fa fa-exclamation" />
                 </button>
 
-                <button
+                <button onClick={() => handleDelete (item)}
                   type="button"
                   className="btn btn-outline-danger btn-sm float-right"
                 >
@@ -176,6 +216,8 @@ function App() {
           placeholder="What needs to be done"
           onChange={handleChangeItem}
         />
+
+        
         <button className="btn btn-outline-secondary" onClick={handleAddItem}>
           Add item
         </button>
